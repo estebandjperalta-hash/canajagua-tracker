@@ -21,19 +21,43 @@ st.markdown("""
 [data-testid="stSidebar"] { background: #111316 !important; border-right: 1px solid #1f2228; }
 [data-testid="stSidebar"] * { color: #d0ccc4 !important; }
 
-/* Fix sidebar toggle — siempre visible */
+/* Fix sidebar toggle — botón naranja fijo siempre visible */
 [data-testid="collapsedControl"] {
     display: flex !important;
     visibility: visible !important;
     opacity: 1 !important;
-    background: #1f2228 !important;
-    border: 0.5px solid #2a2d35 !important;
-    border-radius: 0 6px 6px 0 !important;
+    background: #e05c1a !important;
+    border-radius: 0 8px 8px 0 !important;
+    width: 28px !important;
+    min-height: 48px !important;
+    position: fixed !important;
+    left: 0 !important;
+    top: 50vh !important;
+    z-index: 9999 !important;
+    align-items: center !important;
+    justify-content: center !important;
+    cursor: pointer !important;
+    box-shadow: 3px 0 12px rgba(0,0,0,0.5) !important;
+    transition: width 0.15s !important;
 }
 [data-testid="collapsedControl"]:hover {
-    background: #2a2d35 !important;
+    background: #ff7a3d !important;
+    width: 34px !important;
 }
-[data-testid="collapsedControl"] svg { fill: #e05c1a !important; }
+[data-testid="collapsedControl"] svg {
+    fill: #ffffff !important;
+    width: 16px !important;
+    height: 16px !important;
+}
+/* Botón dentro del sidebar abierto */
+[data-testid="stSidebarCollapseButton"] button {
+    background: transparent !important;
+    border: none !important;
+    color: #e05c1a !important;
+}
+[data-testid="stSidebarCollapseButton"] svg {
+    fill: #e05c1a !important;
+}
 
 /* Week header */
 .week-banner {

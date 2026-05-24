@@ -17,8 +17,6 @@ st.markdown("""
 [data-testid="stAppViewContainer"] { background: #0b0c0e; }
 [data-testid="stMainBlockContainer"] { padding: 0 !important; }
 [data-testid="stHorizontalBlock"] { gap: 0 !important; }
-
-/* Esconder sidebar nativo de Streamlit completamente */
 [data-testid="stSidebar"] { display: none !important; }
 [data-testid="collapsedControl"] { display: none !important; }
 
@@ -60,16 +58,30 @@ st.markdown("""
                text-transform:uppercase; letter-spacing:0.5px; }
 .seg-content { font-size:12px; color:#d0ccc4; line-height:1.6; }
 
-/* Panel izquierdo propio */
+/* Nota del día */
+.note-box {
+    background: #181b1f;
+    border: 0.5px solid #2a2d35;
+    border-left: 3px solid #d4a832;
+    border-radius: 6px;
+    padding: 10px 14px;
+    margin-top: 10px;
+    font-size: 12px;
+    color: #d0ccc4;
+    line-height: 1.6;
+}
+.note-label {
+    font-size: 10px; font-weight: 700;
+    letter-spacing: 1.5px; text-transform: uppercase;
+    color: #d4a832; margin-bottom: 4px;
+}
+
+/* Nav panel */
 .nav-panel {
     background: #111316;
     border-right: 1px solid #1f2228;
     padding: 16px 10px;
     min-height: 100vh;
-    position: sticky;
-    top: 0;
-    overflow-y: auto;
-    max-height: 100vh;
 }
 .nav-header {
     font-family: 'Courier New', monospace;
@@ -92,12 +104,18 @@ div[data-testid="stExpander"] summary { color:#f0ede8 !important; }
 .stButton > button {
     background:#1f2228 !important; color:#d0ccc4 !important;
     border:0.5px solid #2a2d35 !important; border-radius:6px !important;
-    font-size: 12px !important;
+    font-size:12px !important;
 }
 .stButton > button:hover { border-color:#52c97a !important; color:#52c97a !important; }
 div[data-testid="stCheckbox"] label { color:#d0ccc4 !important; font-size:13px !important; }
+div[data-testid="stTextArea"] label { color:#6b6860 !important; font-size:11px !important; }
+div[data-testid="stTextArea"] textarea {
+    background:#181b1f !important; color:#d0ccc4 !important;
+    border:0.5px solid #2a2d35 !important; border-radius:6px !important;
+    font-size:12px !important;
+}
+div[data-testid="stTextArea"] textarea:focus { border-color:#d4a832 !important; }
 
-/* Login */
 .login-card {
     max-width:380px; margin:80px auto 0; background:#111316;
     border:0.5px solid #2a2d35; border-radius:14px; padding:36px 32px;
@@ -164,7 +182,7 @@ def render_login():
                 st.error("Usuario o contraseña incorrectos.")
 
 def logout():
-    for k in ["authenticated","username","sheets","checks","selected_week"]:
+    for k in ["authenticated","username","sheets","checks","notes","selected_week"]:
         st.session_state.pop(k, None)
     st.rerun()
 
@@ -182,13 +200,15 @@ if "sheets" not in st.session_state:
     st.session_state.sheets = SheetsService()
 if "checks" not in st.session_state:
     st.session_state.checks = st.session_state.sheets.load_all_checks()
+if "notes" not in st.session_state:
+    st.session_state.notes = st.session_state.sheets.load_all_notes()
 if "selected_week" not in st.session_state:
     st.session_state.selected_week = 1
 
 sheets: SheetsService = st.session_state.sheets
 
 # ═══════════════════════════════════════════
-# HELPERS
+# HELPERS — CHECKS
 # ═══════════════════════════════════════════
 def get_check(week, day_idx, block_idx=None, ex_idx=None):
     key = f"w{week}_d{day_idx}_day" if block_idx is None \
@@ -201,6 +221,23 @@ def set_check(week, day_idx, value, block_idx=None, ex_idx=None):
     st.session_state.checks[key] = value
     sheets.save_check(key, value, week, day_idx, block_idx, ex_idx)
 
+# ═══════════════════════════════════════════
+# HELPERS — NOTES
+# ═══════════════════════════════════════════
+def note_key(week, day_idx):
+    return f"note_w{week}_d{day_idx}"
+
+def get_note(week, day_idx) -> str:
+    return st.session_state.notes.get(note_key(week, day_idx), "")
+
+def save_note(week, day_idx, text: str):
+    k = note_key(week, day_idx)
+    st.session_state.notes[k] = text
+    sheets.save_note(k, text, week, day_idx)
+
+# ═══════════════════════════════════════════
+# HELPERS — PROGRESS
+# ═══════════════════════════════════════════
 def week_progress(week_num):
     w     = next(x for x in WEEKS if x["num"] == week_num)
     total = len(w["days"])
@@ -240,7 +277,7 @@ TYPE_COLORS = {"run":"#52c97a","str":"#e05c1a","plio":"#d4a832",
                "mob":"#4d9fd6","rest":"#555"}
 
 # ═══════════════════════════════════════════
-# LAYOUT — dos columnas propias
+# LAYOUT
 # ═══════════════════════════════════════════
 wnum = st.session_state.selected_week
 col_nav, col_main = st.columns([1, 4], gap="small")
@@ -262,8 +299,9 @@ with col_nav:
         <div class="prog-track">
             <div class="prog-fill" style="width:{gpct}%"></div>
         </div>
-        <div style="font-size:10px;color:#6b6860;text-align:right;
-                    margin-bottom:10px">{gpct}%</div>
+        <div style="font-size:10px;color:#6b6860;text-align:right;margin-bottom:10px">
+            {gpct}%
+        </div>
         <div style="font-size:11px;color:#6b6860;padding:6px 0 10px;
                     border-top:0.5px solid #1f2228;margin-bottom:4px">
             👤 {st.session_state.username}
@@ -280,38 +318,37 @@ with col_nav:
     for w in WEEKS:
         if w["phase"] != current_phase:
             current_phase = w["phase"]
-            pc = PHASE_COLORS[w["phase"]]
+            pc    = PHASE_COLORS[w["phase"]]
             pname = PHASE_NAMES[w["phase"]].split("·")[-1].strip()
             st.markdown(f"""
             <div class="phase-lbl" style="color:{pc}">● {pname}</div>
             """, unsafe_allow_html=True)
 
-        wdone, wtotal = week_progress(w["num"])
-        wpct_w = round(wdone / wtotal * 100) if wtotal else 0
+        wdone_s, wtotal_s = week_progress(w["num"])
+        wpct_s = round(wdone_s / wtotal_s * 100) if wtotal_s else 0
         is_active = st.session_state.selected_week == w["num"]
 
         c1, c2 = st.columns([5, 1])
         with c1:
-            btn_label = f"S{w['num']} · {w['title'][:18]}{'…' if len(w['title'])>18 else ''}"
-            if st.button(
-                btn_label,
-                key=f"nav_w{w['num']}",
-                use_container_width=True,
-                type="primary" if is_active else "secondary"
-            ):
+            lbl = f"S{w['num']} · {w['title'][:18]}{'…' if len(w['title'])>18 else ''}"
+            if st.button(lbl, key=f"nav_w{w['num']}",
+                         use_container_width=True,
+                         type="primary" if is_active else "secondary"):
                 st.session_state.selected_week = w["num"]
                 st.rerun()
         with c2:
-            if wpct_w == 100:
+            if wpct_s == 100:
                 st.markdown(
-                    "<div style='color:#52c97a;font-size:13px;padding-top:7px;text-align:center'>✓</div>",
+                    "<div style='color:#52c97a;font-size:13px;"
+                    "padding-top:7px;text-align:center'>✓</div>",
                     unsafe_allow_html=True)
-            elif wpct_w > 0:
+            elif wpct_s > 0:
                 st.markdown(
-                    f"<div style='color:#d4a832;font-size:9px;padding-top:9px;text-align:center'>{wpct_w}%</div>",
+                    f"<div style='color:#d4a832;font-size:9px;"
+                    f"padding-top:9px;text-align:center'>{wpct_s}%</div>",
                     unsafe_allow_html=True)
 
-# ── PANEL DERECHO (contenido) ────────────────
+# ── PANEL DERECHO ────────────────────────────
 with col_main:
     week  = next(x for x in WEEKS if x["num"] == wnum)
     pc    = PHASE_COLORS[week["phase"]]
@@ -350,37 +387,72 @@ with col_main:
     </div>
     """, unsafe_allow_html=True)
 
-    # Días
+    # ── DÍAS ──────────────────────────────────
     for di, day in enumerate(week["days"]):
         day_done = get_check(wnum, di)
         ex_done, ex_total = ex_progress(wnum, di)
+        current_note = get_note(wnum, di)
+
         tags_html = "".join(
             f'<span class="tag tag-{t}">{TAG_LABELS.get(t,t)}</span>'
             for t in day["tags"]
         )
         summary = f"{ex_done}/{ex_total} ejercicios" if ex_total > 0 \
-                  else day.get("summary", "")
+                  else day.get("summary","")
         icon = "✅" if day_done else "⬜"
 
-        with st.expander(f"{icon} **{day['name']}** — {summary}", expanded=False):
+        # Indicador de nota en el título del expander
+        note_indicator = " 📝" if current_note.strip() else ""
+
+        with st.expander(
+            f"{icon} **{day['name']}** — {summary}{note_indicator}",
+            expanded=False
+        ):
+            # ── Fila superior: tags + check día ──
             ct, cc = st.columns([3, 1])
             with ct:
-                st.markdown(f'<div style="margin-bottom:4px">{tags_html}</div>',
-                            unsafe_allow_html=True)
+                st.markdown(
+                    f'<div style="margin-bottom:4px">{tags_html}</div>',
+                    unsafe_allow_html=True)
             with cc:
-                new_day = st.checkbox("Día completo ✓", value=day_done,
-                                      key=f"day_{wnum}_{di}")
+                new_day = st.checkbox(
+                    "Día completo ✓",
+                    value=day_done,
+                    key=f"day_{wnum}_{di}"
+                )
                 if new_day != day_done:
                     set_check(wnum, di, new_day)
                     st.rerun()
 
+            # ── NOTA DEL DÍA ─────────────────────
+            st.markdown(
+                '<div class="note-label" style="margin-top:10px">📝 Nota del día</div>',
+                unsafe_allow_html=True
+            )
+            note_text = st.text_area(
+                label="nota_hidden",
+                value=current_note,
+                placeholder="Ej: Hip thrust con mancuerna (banco ocupado). "
+                            "Hice este entreno el domingo en vez del sábado.",
+                height=80,
+                key=f"note_{wnum}_{di}",
+                label_visibility="collapsed",
+            )
+            # Guardar nota al cambiar (con debounce natural de Streamlit)
+            if note_text != current_note:
+                save_note(wnum, di, note_text)
+                # No st.rerun() aquí para no interrumpir mientras escribe
+
             st.divider()
 
+            # ── BLOQUES ──────────────────────────
             for bi, block in enumerate(day["blocks"]):
                 btype  = block["type"]
                 bc     = TYPE_COLORS.get(btype, "#888")
-                blabel = {"run":"RUNNING","str":"FUERZA","plio":"PLIOMETRÍA",
-                          "mob":"MOVILIDAD","rest":"DESCANSO"}.get(btype, btype.upper())
+                blabel = {
+                    "run":"RUNNING","str":"FUERZA","plio":"PLIOMETRÍA",
+                    "mob":"MOVILIDAD","rest":"DESCANSO"
+                }.get(btype, btype.upper())
 
                 st.markdown(f"""
                 <div class="block-hdr" style="color:{bc};border-color:{bc}33">
@@ -404,9 +476,9 @@ with col_main:
                         ex_val = get_check(wnum, di, bi, ei)
                         c1, c2 = st.columns([5, 2])
                         with c1:
-                            note  = f"  \n_{ex[4]}_" if ex[4] else ""
-                            new_v = st.checkbox(
-                                f"**{ex[0]}**{note}",
+                            note_ex = f"  \n_{ex[4]}_" if ex[4] else ""
+                            new_v   = st.checkbox(
+                                f"**{ex[0]}**{note_ex}",
                                 value=ex_val,
                                 key=f"ex_{wnum}_{di}_{bi}_{ei}"
                             )
@@ -416,7 +488,8 @@ with col_main:
                         with c2:
                             st.markdown(f"""
                             <div style="text-align:right;padding-top:6px">
-                                <span style="font-family:monospace;font-size:11px;color:#6b6860">
+                                <span style="font-family:monospace;
+                                             font-size:11px;color:#6b6860">
                                     {ex[1]} × {ex[2]} · {ex[3]}
                                 </span>
                             </div>""", unsafe_allow_html=True)
@@ -424,15 +497,16 @@ with col_main:
                 elif "segments" in block:
                     for seg_label, seg_content in block["segments"]:
                         st.markdown(f"""
-                        <div style="display:grid;grid-template-columns:90px 1fr;gap:10px;
-                                    padding:8px 0;border-bottom:0.5px solid #1a1c20">
+                        <div style="display:grid;grid-template-columns:90px 1fr;
+                                    gap:10px;padding:8px 0;
+                                    border-bottom:0.5px solid #1a1c20">
                             <div class="seg-label">{seg_label}</div>
                             <div class="seg-content">{seg_content}</div>
                         </div>""", unsafe_allow_html=True)
 
                 st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
 
-    # Navegación
+    # ── NAVEGACIÓN ────────────────────────────
     st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
     cp, cm, cn = st.columns([1, 2, 1])
     with cp:
@@ -442,8 +516,8 @@ with col_main:
                 st.rerun()
     with cm:
         st.markdown(
-            f"<div style='text-align:center;font-size:12px;color:#6b6860;padding-top:8px'>"
-            f"Semana {wnum} de 13</div>",
+            f"<div style='text-align:center;font-size:12px;"
+            f"color:#6b6860;padding-top:8px'>Semana {wnum} de 13</div>",
             unsafe_allow_html=True
         )
     with cn:

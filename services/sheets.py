@@ -1,34 +1,27 @@
 """
-Google Sheets service for Canajagua Tracker.
-Guarda y carga checks de entrenamiento en un Google Sheet.
+Google Sheets service para Canajagua Tracker.
 
-Sheet "checks" tiene columnas:
-  key | value | week | day_idx | block_idx | ex_idx | updated_at
+Hoja "checks": key | value | week | day_idx | block_idx | ex_idx | updated_at
+Hoja "notes":  key | note  | week | day_idx | updated_at
 """
 
 import streamlit as st
 from datetime import datetime
-import json
 
 
 class SheetsService:
-    """
-    Conecta con Google Sheets via gspread usando las credenciales
-    almacenadas en st.secrets["gcp_service_account"].
-    
-    Si no hay credenciales configuradas (dev local sin secrets),
-    cae gracefully a modo offline (solo memoria).
-    """
 
-    SHEET_NAME  = "Canajagua_Tracker"
-    TAB_CHECKS  = "checks"
+    SHEET_NAME = "Canajagua_Tracker"
+    TAB_CHECKS = "checks"
+    TAB_NOTES  = "notes"
 
     def __init__(self):
-        self._client  = None
-        self._sheet   = None
-        self._online  = False
-        self._cache   = {}          # key → bool
-        self._dirty   = set()       # keys pendientes de flush
+        self._client       = None
+        self._ws_checks    = None
+        self._ws_notes     = None
+        self._online       = False
+        self._cache_checks = {}
+        self._cache_notes  = {}
         self._connect()
 
     # ── CONEXIÓN ────────────────────────────────────────────
@@ -51,63 +44,62 @@ class SheetsService:
                 sh = client.create(self.SHEET_NAME)
                 sh.share(creds_dict["client_email"], perm_type="user", role="writer")
 
-            # Crear tab "checks" si no existe
+            # Tab checks
             try:
-                ws = sh.worksheet(self.TAB_CHECKS)
+                ws_checks = sh.worksheet(self.TAB_CHECKS)
             except gspread.WorksheetNotFound:
-                ws = sh.add_worksheet(title=self.TAB_CHECKS, rows=5000, cols=8)
-                ws.append_row(["key","value","week","day_idx","block_idx","ex_idx","updated_at"])
+                ws_checks = sh.add_worksheet(title=self.TAB_CHECKS, rows=5000, cols=8)
+                ws_checks.append_row(["key","value","week","day_idx","block_idx","ex_idx","updated_at"])
 
-            self._client = client
-            self._sheet  = ws
-            self._online = True
+            # Tab notes
+            try:
+                ws_notes = sh.worksheet(self.TAB_NOTES)
+            except gspread.WorksheetNotFound:
+                ws_notes = sh.add_worksheet(title=self.TAB_NOTES, rows=2000, cols=5)
+                ws_notes.append_row(["key","note","week","day_idx","updated_at"])
 
-        except Exception as e:
-            # Sin credenciales o error de red → modo offline
+            self._client    = client
+            self._ws_checks = ws_checks
+            self._ws_notes  = ws_notes
+            self._online    = True
+
+        except Exception:
             self._online = False
 
     @property
     def is_online(self):
         return self._online
 
-    # ── LOAD ALL ────────────────────────────────────────────
+    # ── CHECKS ──────────────────────────────────────────────
     def load_all_checks(self) -> dict:
-        """Carga todos los checks del sheet y retorna dict {key: bool}."""
         if not self._online:
             return {}
         try:
-            records = self._sheet.get_all_records()
+            records = self._ws_checks.get_all_records()
             result  = {}
             for row in records:
                 key = str(row.get("key", "")).strip()
                 val = str(row.get("value", "0")).strip()
                 if key:
                     result[key] = val == "1"
-            self._cache = result
+            self._cache_checks = result
             return result
         except Exception:
             return {}
 
-    # ── SAVE CHECK ──────────────────────────────────────────
     def save_check(self, key: str, value: bool,
                    week=None, day_idx=None,
                    block_idx=None, ex_idx=None):
-        """
-        Guarda o actualiza un check en el sheet.
-        Busca la fila por key; si existe la actualiza, si no la agrega.
-        """
-        self._cache[key] = value
-
+        self._cache_checks[key] = value
         if not self._online:
             return
-
         try:
-            cell = self._sheet.find(key, in_column=1)
+            cell = self._ws_checks.find(key, in_column=1)
             if cell:
-                self._sheet.update_cell(cell.row, 2, "1" if value else "0")
-                self._sheet.update_cell(cell.row, 7, datetime.now().isoformat())
+                self._ws_checks.update_cell(cell.row, 2, "1" if value else "0")
+                self._ws_checks.update_cell(cell.row, 7, datetime.now().isoformat())
             else:
-                self._sheet.append_row([
+                self._ws_checks.append_row([
                     key,
                     "1" if value else "0",
                     week if week is not None else "",
@@ -117,41 +109,57 @@ class SheetsService:
                     datetime.now().isoformat(),
                 ])
         except Exception:
-            # Si falla el sheet, al menos está en cache de sesión
             pass
 
-    # ── BULK SAVE ───────────────────────────────────────────
-    def bulk_save(self, checks: dict):
-        """Guarda todos los checks de una vez (para migración o sync inicial)."""
+    # ── NOTES ───────────────────────────────────────────────
+    def load_all_notes(self) -> dict:
+        """Retorna dict {key: str}"""
+        if not self._online:
+            return {}
+        try:
+            records = self._ws_notes.get_all_records()
+            result  = {}
+            for row in records:
+                key  = str(row.get("key", "")).strip()
+                note = str(row.get("note", "")).strip()
+                if key:
+                    result[key] = note
+            self._cache_notes = result
+            return result
+        except Exception:
+            return {}
+
+    def save_note(self, key: str, note: str, week=None, day_idx=None):
+        """Guarda o actualiza una nota."""
+        self._cache_notes[key] = note
         if not self._online:
             return
         try:
-            existing = self._sheet.get_all_records()
-            existing_keys = {r["key"]: i + 2 for i, r in enumerate(existing)}  # row numbers (1-indexed + header)
-
-            rows_to_append = []
-            now = datetime.now().isoformat()
-            for key, value in checks.items():
-                if key in existing_keys:
-                    row_num = existing_keys[key]
-                    self._sheet.update_cell(row_num, 2, "1" if value else "0")
-                    self._sheet.update_cell(row_num, 7, now)
-                else:
-                    rows_to_append.append([key, "1" if value else "0", "", "", "", "", now])
-
-            if rows_to_append:
-                self._sheet.append_rows(rows_to_append)
+            cell = self._ws_notes.find(key, in_column=1)
+            if cell:
+                self._ws_notes.update_cell(cell.row, 2, note)
+                self._ws_notes.update_cell(cell.row, 5, datetime.now().isoformat())
+            else:
+                self._ws_notes.append_row([
+                    key,
+                    note,
+                    week if week is not None else "",
+                    day_idx if day_idx is not None else "",
+                    datetime.now().isoformat(),
+                ])
         except Exception:
             pass
 
-    # ── CLEAR ALL ───────────────────────────────────────────
+    # ── CLEAR ───────────────────────────────────────────────
     def clear_all(self):
-        """Borra todos los checks (útil para reset)."""
-        self._cache = {}
+        self._cache_checks = {}
+        self._cache_notes  = {}
         if not self._online:
             return
         try:
-            self._sheet.clear()
-            self._sheet.append_row(["key","value","week","day_idx","block_idx","ex_idx","updated_at"])
+            self._ws_checks.clear()
+            self._ws_checks.append_row(["key","value","week","day_idx","block_idx","ex_idx","updated_at"])
+            self._ws_notes.clear()
+            self._ws_notes.append_row(["key","note","week","day_idx","updated_at"])
         except Exception:
             pass

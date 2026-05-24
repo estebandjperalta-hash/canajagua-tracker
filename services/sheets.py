@@ -163,3 +163,4 @@ class SheetsService:
             self._ws_notes.append_row(["key","note","week","day_idx","updated_at"])
         except Exception:
             pass
+
